@@ -9,53 +9,55 @@ async function main() {
     chainId: Number(network.chainId)
   });
   
-  // ChainId is now a bigint in ethers v6, so we need to convert it
   if (Number(network.chainId) !== 57054) {
     throw new Error(`Please run deployment on Sonic Blaze Testnet. Current chain ID: ${Number(network.chainId)}`);
   }
 
   const [deployer] = await ethers.getSigners();
-  const balance = await deployer.provider.getBalance(deployer.address);
-
   console.log("Deploying contracts with account:", deployer.address);
-  console.log("Account balance:", ethers.formatEther(balance));
 
-  try {
-    // Deploy the contract
-    const SonicAutomation = await ethers.getContractFactory("SonicAutomation");
-    console.log("Deploying SonicAutomation...");
-    const sonicAutomation = await SonicAutomation.deploy();
-    
-    // Wait for deployment
-    await sonicAutomation.waitForDeployment();
-    const deployedAddress = await sonicAutomation.getAddress();
+  // Deploy the SonicToken contract first (if not already deployed)
+  const sonicTokenAddress = "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38"; // WS token address
+  const routerAddress = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"; // Sonic Router address
 
-    console.log("SonicAutomation deployed to:", deployedAddress);
-    console.log("Verify on Sonic Explorer:", `https://testnet.sonicscan.org/address/${deployedAddress}`);
+  // Deploy the AgentFactory contract
+  const AgentFactory = await ethers.getContractFactory("AgentFactory");
+  console.log("Deploying AgentFactory...");
+  const agentFactory = await AgentFactory.deploy(sonicTokenAddress, routerAddress);
+  await agentFactory.waitForDeployment();
+  const agentFactoryAddress = await agentFactory.getAddress();
+  console.log("AgentFactory deployed to:", agentFactoryAddress);
+  
+  const fs = require("fs");
+  const deploymentInfo = {
+    network: "Sonic Blaze Testnet",
+    chainId: Number(network.chainId),
+    contracts: {
+      AgentFactory: agentFactoryAddress,
+      SonicToken: sonicTokenAddress
+    },
+    tokens: {
+      WETH: "0x309C92261178fA0CF748A855e90Ae73FDb79EBc7",
+      WS: sonicTokenAddress
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  fs.writeFileSync(
+    "./deployment.json",
+    JSON.stringify(deploymentInfo, null, 2)
+  );
 
-    // Write deployment address to a file for the AI agent
-    const fs = require("fs");
-    const deploymentInfo = {
-      address: deployedAddress,
-      network: "Sonic Blaze Testnet",
-      chainId: Number(network.chainId)
-    };
-    
-    fs.writeFileSync(
-      "../backend/deployment.json",
-      JSON.stringify(deploymentInfo, null, 2)
-    );
+  // Verification commands
+  console.log("\nVerification commands:");
+  console.log(`npx hardhat verify --network sonicTestnet ${agentFactoryAddress} "${sonicTokenAddress}" "${routerAddress}"`);
 
-    return sonicAutomation;
-  } catch (error) {
-    console.error("Deployment failed:", error);
-    process.exit(1);
-  }
+  return { agentFactory };
 }
 
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error("Deployment error:", error);
+    console.error("Deployment failed:", error);
     process.exit(1);
   });
